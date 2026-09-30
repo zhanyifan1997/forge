@@ -22,9 +22,5 @@
       "binding": "MEDIA",
       "bucket_name": "neuralperch-media"
     }
-  ],
-  "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
-  }
+  ]
 }

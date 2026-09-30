@@ -1,6 +1,5 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-let cachedJwks = { until: 0, keys: [] };
 
 export function b64url(bytes) {
   let binary = "";
@@ -54,32 +53,40 @@ export async function checkUnlockToken(secret, token, revision) {
   }
 }
 
-export async function verifyAccess(request, env) {
-  const host = new URL(request.url).hostname;
-  if (env.DEV_ADMIN_BYPASS === "true" && (host === "localhost" || host === "127.0.0.1")) return true;
-  const domain = String(env.ACCESS_TEAM_DOMAIN || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const aud = env.ACCESS_AUD;
-  const token = request.headers.get("Cf-Access-Jwt-Assertion");
-  if (!domain || !aud || !token) return false;
-  const parts = token.split(".");
-  if (parts.length !== 3) return false;
+export function adminConfigured(env) {
+  return typeof env.ADMIN_USERNAME === "string" && env.ADMIN_USERNAME.trim().length > 0 &&
+    typeof env.ADMIN_PASSWORD === "string" && env.ADMIN_PASSWORD.length >= 12 &&
+    typeof env.SESSION_SECRET === "string" && env.SESSION_SECRET.length >= 32;
+}
+
+async function adminRevision(env) {
+  return hmac(env.SESSION_SECRET, `admin:${env.ADMIN_USERNAME.trim()}\0${env.ADMIN_PASSWORD}`);
+}
+
+export async function checkAdminCredentials(env, username, password) {
+  if (!adminConfigured(env)) return false;
+  const expected = await hmac(env.SESSION_SECRET, `login:${env.ADMIN_USERNAME.trim()}\0${env.ADMIN_PASSWORD}`);
+  const actual = await hmac(env.SESSION_SECRET, `login:${String(username).trim()}\0${String(password)}`);
+  return safeEqual(expected, actual);
+}
+
+export async function createAdminToken(env) {
+  if (!adminConfigured(env)) throw new Error("管理员账号配置不完整");
+  const payload = b64url(encoder.encode(JSON.stringify({
+    exp: Math.floor(Date.now() / 1000) + 86400,
+    revision: await adminRevision(env)
+  })));
+  return `${payload}.${await hmac(env.SESSION_SECRET, `admin-session:${payload}`)}`;
+}
+
+export async function checkAdminToken(env, token) {
+  if (!adminConfigured(env) || !token) return false;
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra || !safeEqual(await hmac(env.SESSION_SECRET, `admin-session:${payload}`), signature)) return false;
   try {
-    const header = JSON.parse(decoder.decode(fromB64url(parts[0])));
-    const payload = JSON.parse(decoder.decode(fromB64url(parts[1])));
-    if (header.alg !== "RS256" || !header.kid || payload.iss !== `https://${domain}`) return false;
-    if (!(Array.isArray(payload.aud) ? payload.aud.includes(aud) : payload.aud === aud)) return false;
-    const now = Math.floor(Date.now() / 1000);
-    if (!Number.isFinite(payload.exp) || payload.exp <= now || (payload.nbf && payload.nbf > now)) return false;
-    if (cachedJwks.until < Date.now()) {
-      const response = await fetch(`https://${domain}/cdn-cgi/access/certs`);
-      if (!response.ok) return false;
-      const certs = await response.json();
-      cachedJwks = { keys: certs.keys || [], until: Date.now() + 300000 };
-    }
-    const jwk = cachedJwks.keys.find(key => key.kid === header.kid);
-    if (!jwk) return false;
-    const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
-    return await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, fromB64url(parts[2]), encoder.encode(`${parts[0]}.${parts[1]}`));
+    const data = JSON.parse(decoder.decode(fromB64url(payload)));
+    return Number.isFinite(data.exp) && data.exp > Date.now() / 1000 &&
+      safeEqual(data.revision, await adminRevision(env));
   } catch {
     return false;
   }

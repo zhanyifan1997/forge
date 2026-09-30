@@ -31,7 +31,11 @@ const ico = (name, size = 17) => {
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", ...options });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `请求失败：${response.status}`);
+  if (!response.ok) {
+    const cause = new Error(data.error || `请求失败：${response.status}`);
+    cause.status = response.status;
+    throw cause;
+  }
   return data;
 }
 function navItems() {
@@ -171,7 +175,7 @@ async function applyRouteFromHash() {
   }
 }
 function adminFrame(content) {
-  return `<div class="shell"><header class="topbar"><a class="brand" href="/">${esc(state.site?.name || "个人站")}<small>CONTENT STUDIO</small></a><span class="muted" style="font-size:13px">管理工作台</span><div class="top-actions"><a class="secondary" href="/" target="_blank" rel="noopener noreferrer">查看网站 ↗</a></div></header>
+  return `<div class="shell"><header class="topbar"><a class="brand" href="/">${esc(state.site?.name || "个人站")}<small>CONTENT STUDIO</small></a><span class="muted" style="font-size:13px">管理工作台</span><div class="top-actions"><a class="secondary" href="/" target="_blank" rel="noopener noreferrer">查看网站 ↗</a><button class="secondary" data-admin-logout="1">退出登录</button></div></header>
     <div class="admin-layout"><aside class="admin-sidebar panel"><nav class="admin-menu" aria-label="后台菜单">${menu.map(([key,label]) => `<button class="${state.adminPage === key ? "active" : ""}" data-admin-page="${key}">${label}</button>`).join("")}</nav></aside>
     <main class="admin-main panel">${content}</main></div></div>`;
 }
@@ -260,8 +264,16 @@ async function initAdmin() {
     state.accessConfigured = data.accessConfigured;
     renderAdmin();
   } catch (cause) {
-    app.innerHTML = `<div class="shell"><div class="section-card panel"><h2>无法进入管理工作台</h2><p>${esc(cause.message)}</p><p>本地开发需配置 .dev.vars；线上需配置 Cloudflare Access。</p></div></div>`;
+    if (cause.status === 401) renderAdminLogin();
+    else app.innerHTML = `<div class="shell"><div class="section-card panel"><h2>无法进入管理工作台</h2><p>${esc(cause.message)}</p></div></div>`;
   }
+}
+function renderAdminLogin() {
+  app.innerHTML = `<div class="shell"><header class="topbar"><a class="brand" href="/">管理工作台<small>CONTENT STUDIO</small></a></header>
+    <main class="admin-login panel"><h1>登录后台</h1><p class="muted">使用部署时配置的管理员账号登录。</p>
+    <form id="admin-login-form"><div class="field"><label for="admin-username">用户名</label><input id="admin-username" name="username" autocomplete="username" required autofocus></div>
+    <div class="field"><label for="admin-password">密码</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required></div>
+    <button class="primary" type="submit">登录</button><p id="admin-feedback" class="feedback error" role="alert"></p></form></main></div>`;
 }
 function feedback(message, isError = false, modal = false) {
   const node = document.querySelector(modal ? "#modal-feedback" : "#admin-feedback");
@@ -278,7 +290,7 @@ async function upload(inputId, targetId, scope = "public") {
   feedback("图片已上传，记得保存表单。");
 }
 document.addEventListener("click", async event => {
-  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload]");
+  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload]");
   if (!target) return;
   try {
     if (target.dataset.page) {
@@ -300,6 +312,10 @@ document.addEventListener("click", async event => {
     else if (target.dataset.closeModal) { state.modal = null; renderPublic(); }
     else if (target.dataset.back) { state.detail = null; history.replaceState(null, "", "#articles"); renderPublic(); }
     else if (target.dataset.backAbout) { state.detail = null; history.replaceState(null, "", `#about/${state.tab}`); renderPublic(); }
+    else if (target.dataset.adminLogout) {
+      await api("/api/admin/logout", { method: "POST" });
+      state.site = null; state.rows = []; state.adminPage = "overview"; renderAdminLogin();
+    }
     else if (target.dataset.adminPage) {
       state.adminPage = target.dataset.adminPage; state.editId = null; state.rows = []; renderAdmin();
       if (names[state.adminPage]) await loadAdminRows(state.adminPage);
@@ -318,9 +334,13 @@ document.addEventListener("click", async event => {
 });
 document.addEventListener("submit", async event => {
   const form = event.target;
-  if (!["site-form","access-form","entry-form","unlock-form"].includes(form.id)) return;
+  if (!["site-form","access-form","entry-form","unlock-form","admin-login-form"].includes(form.id)) return;
   event.preventDefault();
   try {
+    if (form.id === "admin-login-form") {
+      await api("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: form.elements.namedItem("username").value, password: form.elements.namedItem("password").value }) });
+      await initAdmin(); return;
+    }
     if (form.id === "unlock-form") {
       await api("/api/public/unlock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: form.elements.namedItem("password").value }) });
       state.unlocked = true; state.modal = null;

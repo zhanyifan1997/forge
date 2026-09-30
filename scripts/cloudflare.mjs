@@ -19,21 +19,17 @@ export function buildDeployConfig(local, env) {
   const databaseId = required(env, "D1_DATABASE_ID");
   const databaseName = required(env, "D1_DATABASE_NAME");
   const bucketName = required(env, "R2_BUCKET_NAME");
-  const teamDomain = required(env, "ACCESS_TEAM_DOMAIN");
-  const accessAud = required(env, "ACCESS_AUD");
   const siteDomain = required(env, "SITE_DOMAIN");
   const workerName = String(env.WORKER_NAME || "neuralperch").trim();
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId)) throw new Error("D1_DATABASE_ID 必须是 UUID");
   if (!/^[a-z][a-z0-9-]{1,61}[a-z0-9]$/.test(workerName)) throw new Error("WORKER_NAME 格式无效");
   if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucketName)) throw new Error("R2_BUCKET_NAME 格式无效");
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(databaseName)) throw new Error("D1_DATABASE_NAME 格式无效");
-  if (!/^[a-z0-9.-]+\.cloudflareaccess\.com$/i.test(teamDomain)) throw new Error("ACCESS_TEAM_DOMAIN 应为 team.cloudflareaccess.com 形式");
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(siteDomain)) throw new Error("SITE_DOMAIN 格式无效");
   const config = structuredClone(local);
   config.name = workerName;
   config.d1_databases = [{ ...local.d1_databases[0], database_name: databaseName, database_id: databaseId }];
   config.r2_buckets = [{ ...local.r2_buckets[0], bucket_name: bucketName }];
-  config.vars = { ACCESS_TEAM_DOMAIN: teamDomain, ACCESS_AUD: accessAud };
   config.routes = [{ pattern: siteDomain, custom_domain: true }];
   config.workers_dev = false;
   return config;
@@ -52,6 +48,16 @@ function main() {
   }
   const local = JSON.parse(readFileSync(localConfigPath, "utf8"));
   const config = buildDeployConfig(local, process.env);
+  let adminSecrets;
+  if (action !== "migrate") {
+    adminSecrets = {
+      ADMIN_USERNAME: required(process.env, "ADMIN_USERNAME"),
+      ADMIN_PASSWORD: required(process.env, "ADMIN_PASSWORD"),
+      SESSION_SECRET: required(process.env, "SESSION_SECRET")
+    };
+    if (adminSecrets.ADMIN_PASSWORD.length < 12) throw new Error("ADMIN_PASSWORD 至少需要 12 个字符");
+    if (adminSecrets.SESSION_SECRET.length < 32) throw new Error("SESSION_SECRET 至少需要 32 个字符");
+  }
   let secretDir;
   try {
     writeFileSync(generatedConfigPath, JSON.stringify(config, null, 2), { mode: 0o600 });
@@ -60,11 +66,9 @@ function main() {
     } else if (action === "migrate") {
       runWrangler(["d1", "migrations", "apply", config.d1_databases[0].database_name, "--remote", "--config", generatedConfigPath]);
     } else {
-      const secret = required(process.env, "SESSION_SECRET");
-      if (secret.length < 32) throw new Error("SESSION_SECRET 至少需要 32 个字符");
       secretDir = mkdtempSync(join(tmpdir(), "neuralperch-secrets-"));
       const secretPath = join(secretDir, "secrets.json");
-      writeFileSync(secretPath, JSON.stringify({ SESSION_SECRET: secret }), { mode: 0o600 });
+      writeFileSync(secretPath, JSON.stringify(adminSecrets), { mode: 0o600 });
       runWrangler(["deploy", "--config", generatedConfigPath, "--secrets-file", secretPath]);
     }
   } finally {

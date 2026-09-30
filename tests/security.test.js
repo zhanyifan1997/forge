@@ -1,9 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkPassword, checkUnlockToken, createPasswordRecord, createUnlockToken, verifyAccess } from "../src/security.js";
+import { checkAdminCredentials, checkAdminToken, checkPassword, checkUnlockToken, createAdminToken, createPasswordRecord, createUnlockToken } from "../src/security.js";
 import worker from "../src/worker.js";
 
 const secret = "local-test-secret-with-more-than-thirty-two-characters";
+const admin = { ADMIN_USERNAME: "owner", ADMIN_PASSWORD: "a-strong-admin-password", SESSION_SECRET: secret };
+
+function loginDatabase() {
+  const attempts = new Map();
+  return {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM unlock_attempts")) return attempts.get(values[0]) || null;
+              return null;
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO unlock_attempts")) attempts.set(values[0], { attempts: values[1], first_at: values[2] });
+              if (sql.startsWith("DELETE FROM unlock_attempts")) attempts.delete(values[0]);
+            }
+          };
+        }
+      };
+    }
+  };
+}
 
 test("password record verifies only the correct password", async () => {
   const record = await createPasswordRecord(secret, "example-password-123");
@@ -21,37 +44,49 @@ test("unlock token is bound to the current password revision", async () => {
   assert.equal(await checkUnlockToken(secret, token + "x", first.revision), false);
 });
 
-test("local admin bypass cannot authorize a remote hostname", async () => {
-  const env = { DEV_ADMIN_BYPASS: "true" };
-  assert.equal(await verifyAccess(new Request("http://localhost:8787/api/admin/bootstrap"), env), true);
-  assert.equal(await verifyAccess(new Request("https://neuralperch.com/api/admin/bootstrap"), env), false);
+test("admin credentials and signed session reject wrong passwords and rotation", async () => {
+  assert.equal(await checkAdminCredentials(admin, "owner", "a-strong-admin-password"), true);
+  assert.equal(await checkAdminCredentials(admin, "owner", "wrong-password"), false);
+  const token = await createAdminToken(admin);
+  assert.equal(await checkAdminToken(admin, token), true);
+  assert.equal(await checkAdminToken({ ...admin, ADMIN_PASSWORD: "another-strong-password" }, token), false);
+  assert.equal(await checkAdminToken(admin, token + "x"), false);
 });
 
-test("admin API does not return data without Access identity", async () => {
-  const response = await worker.fetch(new Request("https://neuralperch.com/api/admin/bootstrap"), { DB: {}, ASSETS: {} });
+test("admin API does not return data without a session", async () => {
+  const response = await worker.fetch(new Request("https://neuralperch.com/api/admin/bootstrap"), { ...admin, DB: {} });
   assert.equal(response.status, 401);
 });
 
-test("admin page does not serve static files without Access identity", async () => {
-  let assetsCalled = false;
-  const env = { ASSETS: { fetch: async () => { assetsCalled = true; return new Response("admin"); } } };
-  const response = await worker.fetch(new Request("https://neuralperch.com/admin/"), env);
-  assert.equal(response.status, 401);
-  assert.equal(assetsCalled, false);
-});
-
-test("authorized admin page uses its original URL for static assets", async () => {
+test("admin page serves the login app without a session", async () => {
   let assetPath;
-  const env = {
-    DEV_ADMIN_BYPASS: "true",
-    ASSETS: { fetch: async request => {
-      assetPath = new URL(request.url).pathname;
-      return new Response("admin", { status: 200 });
-    } }
-  };
-  const response = await worker.fetch(new Request("http://localhost:8787/admin/"), env);
+  const env = { ASSETS: { fetch: async request => {
+    assetPath = new URL(request.url).pathname;
+    return new Response("admin");
+  } } };
+  const response = await worker.fetch(new Request("https://neuralperch.com/admin/"), env);
   assert.equal(response.status, 200);
   assert.equal(assetPath, "/admin/");
+});
+
+test("login sets a session cookie and rejects repeated wrong passwords", async () => {
+  const env = { ...admin, DB: loginDatabase() };
+  const request = (password) => new Request("https://neuralperch.com/api/admin/login", {
+    method: "POST", headers: { "content-type": "application/json", "CF-Connecting-IP": "203.0.113.7" },
+    body: JSON.stringify({ username: "owner", password })
+  });
+  const success = await worker.fetch(request(admin.ADMIN_PASSWORD), env);
+  assert.equal(success.status, 200);
+  const cookie = success.headers.get("set-cookie");
+  assert.match(cookie, /np_admin=/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  const authenticated = await worker.fetch(new Request("https://neuralperch.com/api/admin/bootstrap", {
+    headers: { cookie: cookie.split(";")[0] }
+  }), env);
+  assert.equal(authenticated.status, 200);
+  for (let i = 0; i < 5; i++) assert.equal((await worker.fetch(request("wrong"), env)).status, 401);
+  assert.equal((await worker.fetch(request("wrong"), env)).status, 429);
 });
 
 test("protected content does not return without an unlock cookie", async () => {

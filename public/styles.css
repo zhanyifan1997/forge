@@ -93,6 +93,9 @@ h1,h2,h3,p{margin-top:0}
 .notice{font-size:12px;color:var(--muted);line-height:1.7}
 .feedback{margin:12px 0;color:#17754a;font-size:13px}
 .feedback.error{color:#c83e50}
+.admin-login{max-width:440px;margin:56px auto;padding:32px}
+.admin-login h1{margin:0 0 8px;font-size:25px}
+.admin-login .field{margin:20px 0}
 .admin-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px;align-items:start}
 .admin-sidebar{padding:14px;position:sticky;top:18px}
 .admin-menu{display:grid;gap:4px}

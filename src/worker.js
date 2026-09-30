@@ -1,4 +1,4 @@
-import { checkPassword, checkUnlockToken, createPasswordRecord, createUnlockToken, hmac, verifyAccess } from "./security.js";
+import { adminConfigured, checkAdminCredentials, checkAdminToken, checkPassword, checkUnlockToken, createAdminToken, createPasswordRecord, createUnlockToken, hmac } from "./security.js";
 
 const kinds = new Set(["article", "project", "resume", "link", "task", "idea", "review"]);
 const publicKinds = new Set(["article", "link"]);
@@ -117,8 +117,31 @@ async function handlePublic(request, env, path) {
   return error("接口不存在", 404);
 }
 async function handleAdmin(request, env, path) {
-  if (!await verifyAccess(request, env)) return error("需要管理员身份验证", 401);
   if (!["GET", "HEAD"].includes(request.method) && !mutationAllowed(request)) return error("请求来源无效", 403);
+  if (path === "/api/admin/login" && request.method === "POST") {
+    if (!adminConfigured(env)) return error("请先配置 ADMIN_USERNAME、ADMIN_PASSWORD 和 SESSION_SECRET", 503);
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    const clientKey = await hmac(env.SESSION_SECRET, `admin-login:${ip}`);
+    const now = Math.floor(Date.now() / 1000);
+    const attempt = await env.DB.prepare("SELECT attempts,first_at FROM unlock_attempts WHERE client_key=?").bind(clientKey).first();
+    if (attempt && now - attempt.first_at < 900 && attempt.attempts >= 5) return error("尝试次数过多，请 15 分钟后再试", 429);
+    const body = await request.json().catch(() => ({}));
+    if (!await checkAdminCredentials(env, body?.username || "", body?.password || "")) {
+      const count = attempt && now - attempt.first_at < 900 ? attempt.attempts + 1 : 1;
+      const firstAt = attempt && now - attempt.first_at < 900 ? attempt.first_at : now;
+      await env.DB.prepare("INSERT INTO unlock_attempts(client_key,attempts,first_at) VALUES(?,?,?) ON CONFLICT(client_key) DO UPDATE SET attempts=excluded.attempts,first_at=excluded.first_at").bind(clientKey, count, firstAt).run();
+      return error("用户名或密码错误", 401);
+    }
+    await env.DB.prepare("DELETE FROM unlock_attempts WHERE client_key=?").bind(clientKey).run();
+    const token = await createAdminToken(env);
+    const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+    return json({ ok: true }, 200, { "set-cookie": `np_admin=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${secure}` });
+  }
+  if (path === "/api/admin/logout" && request.method === "POST") {
+    const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+    return json({ ok: true }, 200, { "set-cookie": `np_admin=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}` });
+  }
+  if (!await checkAdminToken(env, cookie(request, "np_admin"))) return error("请先登录管理员账号", 401);
   if (path === "/api/admin/bootstrap" && request.method === "GET") {
     const site = await setting(env.DB, "site", {});
     const access = await setting(env.DB, "access");
@@ -175,7 +198,7 @@ async function handleMedia(request, env, path) {
   if (request.method !== "GET") return error("请求方式不支持", 405);
   const key = path.slice("/media/".length);
   if (!/^(public|private)\/[a-f0-9-]+\.(jpg|png|webp|gif)$/.test(key)) return error("图片不存在", 404);
-  if (key.startsWith("private/") && !await unlocked(request, env) && !await verifyAccess(request, env)) return error("请先输入访问密码", 403);
+  if (key.startsWith("private/") && !await unlocked(request, env) && !await checkAdminToken(env, cookie(request, "np_admin"))) return error("请先输入访问密码", 403);
   const object = await env.MEDIA.get(key);
   if (!object) return error("图片不存在", 404);
   return new Response(object.body, { headers: { "content-type": object.httpMetadata?.contentType || "application/octet-stream", "cache-control": key.startsWith("public/") ? "public, max-age=31536000, immutable" : "private, no-store", "x-content-type-options": "nosniff" } });
@@ -187,10 +210,6 @@ export default {
       if (path.startsWith("/api/public/")) return await handlePublic(request, env, path);
       if (path.startsWith("/api/admin/")) return await handleAdmin(request, env, path);
       if (path.startsWith("/media/")) return await handleMedia(request, env, path);
-      if (path === "/admin" || path.startsWith("/admin/")) {
-        if (!await verifyAccess(request, env)) return new Response("需要管理员身份验证", { status: 401 });
-        return env.ASSETS.fetch(request);
-      }
       return env.ASSETS.fetch(request);
     } catch (cause) {
       if (cause instanceof SyntaxError) return error("请求内容格式无效");

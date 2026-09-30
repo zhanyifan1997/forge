@@ -7,8 +7,8 @@
       "DB": { "description": "选择已有 D1 或创建新 D1，保存站点资料、文章、项目、简历和后台内容。" },
       "MEDIA": { "description": "选择已有 R2 桶或创建新桶，保存上传图片。" },
       "SESSION_SECRET": { "description": "用于访问密码摘要和解锁会话签名。请填写 openssl rand -hex 32 生成的随机值。" },
-      "ACCESS_TEAM_DOMAIN": { "description": "Cloudflare Access 团队域名，例如 team.cloudflareaccess.com；后台启用后填写。" },
-      "ACCESS_AUD": { "description": "保护后台的 Cloudflare Access 应用 AUD；后台启用后填写。" }
+      "ADMIN_USERNAME": { "description": "后台管理员用户名，由部署者自己填写。" },
+      "ADMIN_PASSWORD": { "description": "后台管理员密码，至少 12 个字符；请使用独立的强密码。" }
     }
   },
   "scripts": {
