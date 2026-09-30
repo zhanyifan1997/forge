@@ -1,0 +1,16 @@
+{
+  "name": "neuralperch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.local.jsonc",
+    "deploy": "node scripts/cloudflare.mjs deploy",
+    "deploy:check": "node scripts/cloudflare.mjs check",
+    "db:local": "wrangler d1 migrations apply neuralperch-local --local --config wrangler.local.jsonc",
+    "db:remote": "node scripts/cloudflare.mjs migrate",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
+}
