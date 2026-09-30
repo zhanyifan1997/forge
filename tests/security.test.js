@@ -40,6 +40,20 @@ test("admin page does not serve static files without Access identity", async () 
   assert.equal(assetsCalled, false);
 });
 
+test("authorized admin page uses its original URL for static assets", async () => {
+  let assetPath;
+  const env = {
+    DEV_ADMIN_BYPASS: "true",
+    ASSETS: { fetch: async request => {
+      assetPath = new URL(request.url).pathname;
+      return new Response("admin", { status: 200 });
+    } }
+  };
+  const response = await worker.fetch(new Request("http://localhost:8787/admin/"), env);
+  assert.equal(response.status, 200);
+  assert.equal(assetPath, "/admin/");
+});
+
 test("protected content does not return without an unlock cookie", async () => {
   const env = {
     DB: { prepare: () => ({ bind: () => ({ first: async () => ({ value: JSON.stringify({ revision: "current" }) }) }) }) },

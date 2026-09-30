@@ -189,7 +189,7 @@ export default {
       if (path.startsWith("/media/")) return await handleMedia(request, env, path);
       if (path === "/admin" || path.startsWith("/admin/")) {
         if (!await verifyAccess(request, env)) return new Response("需要管理员身份验证", { status: 401 });
-        return env.ASSETS.fetch(new Request(new URL("/admin/index.html", request.url), request));
+        return env.ASSETS.fetch(request);
       }
       return env.ASSETS.fetch(request);
     } catch (cause) {
