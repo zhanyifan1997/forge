@@ -1,2 +1,1 @@
-DEV_ADMIN_BYPASS=true
-SESSION_SECRET=replace-with-a-long-random-secret-for-local-development
+SESSION_SECRET=
