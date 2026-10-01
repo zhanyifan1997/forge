@@ -1,3 +1,5 @@
+import { renderMarkdown } from "./markdown.js";
+
 const app = document.querySelector("#app");
 const isAdmin = document.body.dataset.mode === "admin";
 const menu = [
@@ -15,6 +17,11 @@ const state = {
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const attr = esc;
+function plainMarkdown(value) {
+  const node = document.createElement("div");
+  node.innerHTML = renderMarkdown(value);
+  return node.textContent?.replace(/\s+/g, " ").trim() || "";
+}
 const fmtDate = value => value ? new Date(value.replace(" ", "T") + (value.includes("Z") ? "" : "Z")).toLocaleDateString("zh-CN") : "";
 const ico = (name, size = 17) => {
   const paths = {
@@ -79,18 +86,18 @@ function rail() {
 function entryCard(item) {
   return `<button class="entry-card" data-detail="${attr(item.kind)}:${attr(item.id)}">
     <div class="thumb">${item.image_url ? `<img src="${attr(item.image_url)}" alt="">` : ico("image", 25)}</div>
-    <div><h3>${esc(item.title)}</h3><p>${esc(item.summary || item.body.slice(0, 90) || "点击查看内容")}</p>
+    <div><h3>${esc(item.title)}</h3><p>${esc(item.summary || plainMarkdown(item.body).slice(0, 90) || "点击查看内容")}</p>
     <div class="meta">${item.category ? `<span class="pill">${esc(item.category)}</span>` : ""}<span>${fmtDate(item.updated_at)}</span></div></div></button>`;
 }
 function homePage() {
   const site = state.site || {};
   return `<section class="hero-panel panel">${site.coverUrl ? `<img class="hero-cover" src="${attr(site.coverUrl)}" alt="">` : ""}<div class="eyebrow">${esc(site.name || "个人站")} · PERSONAL SPACE</div>
     <h1>${esc(site.tagline || "一句话介绍待填写")}</h1>
-    <p>${esc(site.description ? site.description.slice(0, 140) : "在后台填写个人介绍后，这里会展示给访客。")}</p></section>
+    <p>${esc(site.description ? plainMarkdown(site.description).slice(0, 140) : "在后台填写个人介绍后，这里会展示给访客。")}</p></section>
     <section class="section-card panel"><div class="section-head"><h2>最新文章</h2><button class="more" data-page="articles">查看全部 ${ico("arrow", 14)}</button></div>
       <div class="entry-list">${state.articles.length ? state.articles.slice(0, 4).map(entryCard).join("") : '<div class="empty">还没有发布文章。发布后会显示在这里。</div>'}</div></section>
     <section class="section-card panel"><div class="section-head"><h2>关于我</h2><button class="more" data-page="about">了解更多 ${ico("arrow", 14)}</button></div>
-      <p class="bio">${esc(site.description || "个人介绍待填写。")}</p></section>`;
+      <div class="bio markdown-body">${renderMarkdown(site.description || "个人介绍待填写。")}</div></section>`;
 }
 function articlesPage() {
   const categories = ["全部", ...new Set(state.articles.map(row => row.category).filter(Boolean))];
@@ -105,7 +112,7 @@ function linksPage() {
 function aboutPage() {
   const tabs = state.site?.aboutTabs || [{ key: "bio", label: "关于我" }, { key: "projects", label: "项目" }, { key: "resume", label: "简历" }];
   let body = "";
-  if (state.tab === "bio") body = `<h1 class="page-title">关于我</h1><div class="bio">${esc(state.site?.description || "个人介绍待填写。")}</div>${state.site?.contactEmail ? `<p class="notice">联系邮箱：<a href="mailto:${attr(state.site.contactEmail)}">${esc(state.site.contactEmail)}</a></p>` : ""}`;
+  if (state.tab === "bio") body = `<h1 class="page-title">关于我</h1><div class="bio markdown-body">${renderMarkdown(state.site?.description || "个人介绍待填写。")}</div>${state.site?.contactEmail ? `<p class="notice">联系邮箱：<a href="mailto:${attr(state.site.contactEmail)}">${esc(state.site.contactEmail)}</a></p>` : ""}`;
   else if (!state.unlocked) body = state.protected ? `<div class="lock-note">此内容需要访问密码。输入密码后即可查看「项目」和「简历」。</div><button class="primary" data-unlock="1">输入访问密码</button>` : '<div class="lock-note">此内容暂未开放。请稍后再来查看。</div>';
   else if (state.detail?.kind === (state.tab === "projects" ? "project" : "resume")) body = detailPage(state.detail, true);
   else body = `<div class="entry-list" id="protected-entries"><div class="empty">正在加载内容…</div></div>`;
@@ -116,7 +123,7 @@ function detailPage(item, inline = false) {
     <h1 class="page-title" style="margin-top:15px">${esc(item.title)}</h1>
     <div class="meta" style="margin-bottom:20px">${item.category ? `<span class="pill">${esc(item.category)}</span>` : ""}<span>${fmtDate(item.updated_at)}</span></div>
     ${item.image_url ? `<img src="${attr(item.image_url)}" alt="" style="width:100%;max-height:330px;object-fit:cover;border-radius:12px;margin-bottom:20px">` : ""}
-    <div class="detail-body">${esc(item.body || item.summary)}</div>
+    <div class="detail-body markdown-body">${renderMarkdown(item.body || item.summary)}</div>
     ${item.url ? `<p style="margin-top:22px"><a class="primary" href="${attr(item.url)}" target="_blank" rel="noopener noreferrer">查看相关链接 ↗</a></p>` : ""}`;
 }
 function renderModal() {
@@ -188,6 +195,20 @@ function adminOverview() {
       <button class="link-tile" data-admin-page="task"><span><strong>待办事项</strong><small>管理只在后台显示的任务</small></span>${ico("arrow")}</button>
     </div></div>`;
 }
+function markdownEditor(id, label, value, scope = "public") {
+  const buttons = [
+    ["heading", "标题"], ["bold", "加粗"], ["italic", "斜体"],
+    ["link", "链接"], ["quote", "引用"], ["list", "列表"],
+    ["code", "代码"], ["image", "插入图片"]
+  ];
+  return `<div class="field wide"><label for="${id}">${label} <span class="muted">· Markdown</span></label>
+    <div class="markdown-editor" data-upload-scope="${scope}">
+      <div class="editor-toolbar" role="toolbar" aria-label="Markdown 编辑工具">${buttons.map(([action, text]) => `<button type="button" data-editor-action="${action}" title="${text}">${text}</button>`).join("")}</div>
+      <div class="editor-panels"><div class="editor-pane"><div class="editor-caption">编辑 Markdown</div><textarea id="${id}" name="${id === "entry-body" ? "body" : id}" spellcheck="false" placeholder="开始写作，支持标题、列表、链接、图片和代码块…">${esc(value)}</textarea></div>
+        <div class="editor-pane editor-preview-pane"><div class="editor-caption">实时预览</div><div class="editor-preview markdown-body">${value ? renderMarkdown(value) : '<p class="muted">预览会在这里显示</p>'}</div></div></div>
+      <input class="editor-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+    </div><small class="editor-hint">支持标准 Markdown；图片上传后会插入到光标位置。请保存表单完成发布。</small></div>`;
+}
 function siteForm() {
   const site = state.site || {};
   const field = (id, label, value, textarea = false) => `<div class="field ${textarea ? "wide" : ""}"><label for="${id}">${label}</label>${textarea ? `<textarea id="${id}" name="${id}">${esc(value)}</textarea>` : `<input id="${id}" name="${id}" value="${attr(value)}">`}</div>`;
@@ -195,7 +216,7 @@ function siteForm() {
     <form id="site-form"><div class="form-panel"><h2>个人形象</h2><div class="form-grid">
       ${field("name","站点名称",site.name)}
       ${field("tagline","一句话描述",site.tagline)}
-      ${field("description","关于我 / 个人介绍",site.description,true)}
+      ${markdownEditor("description","关于我 / 个人介绍",site.description)}
       ${field("announcement","站点公告",site.announcement,true)}
       ${field("contactEmail","联系邮箱",site.contactEmail)}
       ${field("avatarUrl","头像地址",site.avatarUrl)}
@@ -219,14 +240,14 @@ function accessForm() {
 }
 function entryForm(kind, item = {}) {
   const label = names[kind];
-  const showBody = !["link", "task"].includes(kind);
+  const showBody = kind !== "link";
   const showUrl = ["link", "project", "resume"].includes(kind);
   const showImage = ["article", "project"].includes(kind);
   return `<form id="entry-form" class="form-panel" data-kind="${kind}" data-id="${attr(item.id || "")}"><h2>${item.id ? "编辑" : "新建"}${label}</h2>
     <div class="form-grid">
       <div class="field wide"><label for="entry-title">标题</label><input id="entry-title" name="title" maxlength="180" required value="${attr(item.title)}"></div>
       <div class="field wide"><label for="entry-summary">摘要 / 简短描述</label><textarea id="entry-summary" name="summary">${esc(item.summary)}</textarea></div>
-      ${showBody ? `<div class="field wide"><label for="entry-body">正文（纯文本，可用换行分段）</label><textarea id="entry-body" name="body" style="min-height:220px">${esc(item.body)}</textarea></div>` : ""}
+      ${showBody ? markdownEditor("entry-body", "正文", item.body, ["project", "resume", "task", "idea", "review"].includes(kind) ? "private" : "public") : ""}
       <div class="field"><label for="entry-category">分类</label><input id="entry-category" name="category" value="${attr(item.category)}" placeholder="可留空"></div>
       <div class="field"><label for="entry-order">排序（数字越小越靠前）</label><input id="entry-order" name="sort_order" type="number" value="${attr(item.sort_order ?? 0)}"></div>
       ${showUrl ? `<div class="field wide"><label for="entry-url">外部链接</label><input id="entry-url" name="url" type="url" value="${attr(item.url)}" placeholder="https://"></div>` : ""}
@@ -289,11 +310,60 @@ async function upload(inputId, targetId, scope = "public") {
   document.getElementById(targetId).value = result.url;
   feedback("图片已上传，记得保存表单。");
 }
+function insertMarkdown(textarea, action, replacement = "") {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = textarea.value.slice(start, end);
+  const snippets = {
+    heading: `## ${selected || "标题"}`,
+    bold: `**${selected || "加粗文字"}**`,
+    italic: `*${selected || "斜体文字"}*`,
+    link: `[${selected || "链接文字"}](https://example.com)`,
+    quote: `> ${selected || "引用内容"}`,
+    list: selected ? selected.split("\n").map(line => `- ${line}`).join("\n") : "- 列表项",
+    code: selected.includes("\n") ? `\n\`\`\`\n${selected}\n\`\`\`\n` : `\`${selected || "代码"}\``,
+    image: replacement
+  };
+  const value = snippets[action];
+  if (value === undefined) return;
+  textarea.setRangeText(value, start, end, "select");
+  textarea.focus();
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+document.addEventListener("input", event => {
+  if (!event.target.matches(".markdown-editor textarea")) return;
+  const preview = event.target.closest(".markdown-editor")?.querySelector(".editor-preview");
+  if (preview) preview.innerHTML = event.target.value ? renderMarkdown(event.target.value) : '<p class="muted">预览会在这里显示</p>';
+});
+document.addEventListener("change", async event => {
+  if (!event.target.matches(".editor-image-file")) return;
+  const input = event.target;
+  const editor = input.closest(".markdown-editor");
+  const textarea = editor?.querySelector("textarea");
+  const file = input.files?.[0];
+  if (!textarea || !file) return;
+  const position = textarea.selectionStart;
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("scope", editor.dataset.uploadScope);
+    feedback("图片上传中…");
+    const { url } = await api("/api/admin/media", { method: "POST", body: form });
+    textarea.setSelectionRange(position, position);
+    insertMarkdown(textarea, "image", `![图片](${url})`);
+    feedback("图片已插入正文，保存表单后生效。");
+  } catch (cause) { feedback(cause.message, true); }
+  finally { input.value = ""; }
+});
 document.addEventListener("click", async event => {
-  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload]");
+  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload],[data-editor-action]");
   if (!target) return;
   try {
-    if (target.dataset.page) {
+    if (target.dataset.editorAction) {
+      const editor = target.closest(".markdown-editor");
+      if (target.dataset.editorAction === "image") editor.querySelector(".editor-image-file").click();
+      else insertMarkdown(editor.querySelector("textarea"), target.dataset.editorAction);
+    } else if (target.dataset.page) {
       state.page = target.dataset.page; state.detail = null; state.category = "全部";
       location.hash = state.page; renderPublic();
     } else if (target.dataset.tab) {
