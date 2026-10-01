@@ -109,3 +109,21 @@ test("private R2 media does not return without an unlock cookie", async () => {
   assert.equal(response.status, 403);
   assert.equal(mediaCalled, false);
 });
+
+test("site social links are saved and unsafe URLs are rejected", async () => {
+  let saved;
+  const env = {
+    ...admin,
+    DB: { prepare: () => ({ bind: (...values) => ({ run: async () => { saved = JSON.parse(values[1]); } }) }) }
+  };
+  const token = await createAdminToken(env);
+  const save = socialLinks => worker.fetch(new Request("https://neuralperch.com/api/admin/site", {
+    method: "PUT",
+    headers: { cookie: `np_admin=${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Neuralperch", socialLinks })
+  }), env);
+  const valid = [{ platform: "youtube", label: "视频", url: "https://youtube.com/@example" }];
+  assert.equal((await save(valid)).status, 200);
+  assert.deepEqual(saved.socialLinks, valid);
+  assert.equal((await save([{ platform: "website", label: "危险链接", url: "javascript:alert(1)" }])).status, 400);
+});

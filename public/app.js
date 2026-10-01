@@ -9,6 +9,7 @@ const menu = [
   ["access", "访问权限"]
 ];
 const names = { article: "文章", project: "项目", resume: "简历", link: "链接", task: "待办", idea: "想法", review: "回顾" };
+const socialPlatforms = [["youtube", "YouTube"], ["x", "X"], ["bilibili", "哔哩哔哩"], ["telegram", "Telegram"], ["github", "GitHub"], ["website", "网站"], ["email", "邮箱"]];
 const state = {
   site: null, articles: [], links: [], protected: false, unlocked: false,
   page: "home", tab: "bio", category: "全部", detail: null, modal: null,
@@ -54,18 +55,32 @@ function navButton(item, className = "") {
 function avatar() {
   return state.site?.avatarUrl ? `<img src="${attr(state.site.avatarUrl)}" alt="头像">` : esc((state.site?.name || "N").slice(0, 1).toUpperCase());
 }
+function brand() {
+  return '<img class="brand-logo" src="/brand/neuralperch-logo.png" alt="Neuralperch 神经鲈鱼">';
+}
+function socialGlyph(platform) {
+  if (platform === "youtube") return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22 7.2a3 3 0 0 0-2.1-2.1C18 4.6 12 4.6 12 4.6s-6 0-7.9.5A3 3 0 0 0 2 7.2a31 31 0 0 0 0 9.6 3 3 0 0 0 2.1 2.1c1.9.5 7.9.5 7.9.5s6 0 7.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 0-9.6ZM10 15.4V8.6l5.8 3.4-5.8 3.4Z"/></svg>';
+  if (platform === "telegram") return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m21.4 3.3-3.3 16a1 1 0 0 1-1.5.6l-4.5-3.3-2.3 2.2a.8.8 0 0 1-1.3-.5l-.4-4.5L19 5.8 6.1 12.9l-3.3-1.1a1 1 0 0 1 0-1.9l17.3-7.4a1 1 0 0 1 1.3.8Z"/></svg>';
+  if (platform === "email") return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M3 6h18v12H3zM3 7l9 7 9-7"/></svg>';
+  if (platform === "website") return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  return { x: "𝕏", bilibili: "bili", github: "GH" }[platform] || "↗";
+}
+function socialLinks() {
+  const rows = state.site?.socialLinks || [];
+  return rows.length ? `<div class="social-links" aria-label="社交与联系链接">${rows.map(item => `<a class="social-link social-${attr(item.platform)}" href="${attr(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${attr(item.label)}" title="${attr(item.label)}">${socialGlyph(item.platform)}</a>`).join("")}</div>` : "";
+}
 function publicFrame(content) {
   const site = state.site || {};
   const nav = navItems();
   return `${site.coverUrl ? `<div class="site-backdrop" aria-hidden="true"><img src="${attr(site.coverUrl)}" alt=""></div>` : ""}<div class="shell public-shell ${site.coverUrl ? "has-cover" : ""}">
-    <header class="topbar"><a class="brand" href="#home" data-page="home">${esc(site.name || "个人站")}<small>PERSONAL SPACE</small></a>
+    <header class="topbar"><a class="brand" href="#home" data-page="home">${brand()}</a>
       <nav class="topnav" aria-label="主导航">${nav.map(item => navButton(item)).join("")}</nav>
       <div class="top-actions"><button class="icon-button" aria-label="查看文章" data-page="articles">${ico("search", 18)}</button></div>
     </header>
     <div class="layout">
       <aside class="profile panel"><div class="avatar">${avatar()}</div><h2>${esc(site.name || "个人站")}</h2>
         <p class="profile-summary">${esc(site.tagline || "一句话介绍待填写")}</p>
-        <button class="profile-cta" data-page="about">了解更多 →</button>
+        ${socialLinks()}
         <nav class="side-nav" aria-label="侧边导航">${nav.map(item => navButton(item)).join("")}</nav>
       </aside>
       <main class="main-column" id="main-content">${content}</main>
@@ -182,14 +197,14 @@ async function applyRouteFromHash() {
   }
 }
 function adminFrame(content) {
-  return `<div class="shell"><header class="topbar"><a class="brand" href="/">${esc(state.site?.name || "个人站")}<small>CONTENT STUDIO</small></a><span class="muted" style="font-size:13px">管理工作台</span><div class="top-actions"><a class="secondary" href="/" target="_blank" rel="noopener noreferrer">查看网站 ↗</a><button class="secondary" data-admin-logout="1">退出登录</button></div></header>
+  return `<div class="shell"><header class="topbar"><a class="brand" href="/">${brand()}</a><div class="top-actions"><a class="secondary" href="/" target="_blank" rel="noopener noreferrer">查看网站 ↗</a><button class="secondary" data-admin-logout="1">退出登录</button></div></header>
     <div class="admin-layout"><aside class="admin-sidebar panel"><nav class="admin-menu" aria-label="后台菜单">${menu.map(([key,label]) => `<button class="${state.adminPage === key ? "active" : ""}" data-admin-page="${key}">${label}</button>`).join("")}</nav></aside>
     <main class="admin-main panel">${content}</main></div></div>`;
 }
 function adminOverview() {
   return `<div class="admin-head"><div><h1>概览</h1><p>在这里管理站点内容和访问方式。</p></div></div>
     <div class="form-panel"><h2>开始编辑</h2><div class="link-grid">
-      <button class="link-tile" data-admin-page="site"><span><strong>站点资料</strong><small>头像、名称、简介、导航与关于页面</small></span>${ico("arrow")}</button>
+      <button class="link-tile" data-admin-page="site"><span><strong>站点资料</strong><small>头像、简介、社交链接与导航</small></span>${ico("arrow")}</button>
       <button class="link-tile" data-admin-page="article"><span><strong>文章管理</strong><small>创建草稿并发布文章</small></span>${ico("arrow")}</button>
       <button class="link-tile" data-admin-page="access"><span><strong>访问权限</strong><small>设置项目与简历的访问密码</small></span>${ico("arrow")}</button>
       <button class="link-tile" data-admin-page="task"><span><strong>待办事项</strong><small>管理只在后台显示的任务</small></span>${ico("arrow")}</button>
@@ -209,6 +224,14 @@ function markdownEditor(id, label, value, scope = "public") {
       <input class="editor-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
     </div><small class="editor-hint">支持标准 Markdown；图片上传后会插入到光标位置。请保存表单完成发布。</small></div>`;
 }
+function socialLinkRow(item = {}) {
+  return `<div class="social-config-row" data-social-row>
+    <select data-social-platform aria-label="平台">${socialPlatforms.map(([value, label]) => `<option value="${value}" ${item.platform === value ? "selected" : ""}>${label}</option>`).join("")}</select>
+    <input data-social-label aria-label="链接名称" maxlength="40" placeholder="名称" value="${attr(item.label || "")}" required>
+    <input data-social-url aria-label="链接地址" type="text" inputmode="url" maxlength="500" placeholder="https://… 或 mailto:…" value="${attr(item.url || "")}" required>
+    <button class="text-button delete" type="button" data-remove-social="1" aria-label="删除这条链接">删除</button>
+  </div>`;
+}
 function siteForm() {
   const site = state.site || {};
   const field = (id, label, value, textarea = false) => `<div class="field ${textarea ? "wide" : ""}"><label for="${id}">${label}</label>${textarea ? `<textarea id="${id}" name="${id}">${esc(value)}</textarea>` : `<input id="${id}" name="${id}" value="${attr(value)}">`}</div>`;
@@ -224,6 +247,9 @@ function siteForm() {
       ${field("coverUrl","页面背景图片地址",site.coverUrl)}
       <div class="field wide"><label>上传页面背景</label><div class="upload-box"><input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp,image/gif"><button type="button" class="secondary" data-upload="cover">上传并使用</button></div></div>
     </div></div>
+    <div class="form-panel"><div class="social-config-head"><div><h2>头像下方的链接</h2><p class="muted">选择平台，填写名称和地址。保存后显示在头像下方。</p></div><button class="secondary" type="button" data-add-social="1">＋ 添加链接</button></div>
+      <div id="social-link-list">${(site.socialLinks || []).map(socialLinkRow).join("")}</div>
+    </div>
     <div class="form-panel"><h2>顶部与侧边导航</h2>
       ${(site.navigation || []).map(item => `<div class="toggle-row"><span>${esc(item.key)}</span><input aria-label="${esc(item.key)} 标签" data-nav-label="${attr(item.key)}" value="${attr(item.label)}" style="max-width:220px;border:1px solid var(--line);border-radius:8px;padding:7px"><label><input type="checkbox" data-nav-visible="${attr(item.key)}" ${item.visible ? "checked" : ""}> 显示</label></div>`).join("")}
     </div>
@@ -290,7 +316,7 @@ async function initAdmin() {
   }
 }
 function renderAdminLogin() {
-  app.innerHTML = `<div class="shell"><header class="topbar"><a class="brand" href="/">管理工作台<small>CONTENT STUDIO</small></a></header>
+  app.innerHTML = `<div class="shell"><header class="topbar"><a class="brand" href="/">${brand()}</a></header>
     <main class="admin-login panel"><h1>登录后台</h1><p class="muted">使用部署时配置的管理员账号登录。</p>
     <form id="admin-login-form"><div class="field"><label for="admin-username">用户名</label><input id="admin-username" name="username" autocomplete="username" required autofocus></div>
     <div class="field"><label for="admin-password">密码</label><input id="admin-password" name="password" type="password" autocomplete="current-password" required></div>
@@ -356,10 +382,12 @@ document.addEventListener("change", async event => {
   finally { input.value = ""; }
 });
 document.addEventListener("click", async event => {
-  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload],[data-editor-action]");
+  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload],[data-editor-action],[data-add-social],[data-remove-social]");
   if (!target) return;
   try {
-    if (target.dataset.editorAction) {
+    if (target.dataset.addSocial) document.querySelector("#social-link-list")?.insertAdjacentHTML("beforeend", socialLinkRow());
+    else if (target.dataset.removeSocial) target.closest("[data-social-row]")?.remove();
+    else if (target.dataset.editorAction) {
       const editor = target.closest(".markdown-editor");
       if (target.dataset.editorAction === "image") editor.querySelector(".editor-image-file").click();
       else insertMarkdown(editor.querySelector("textarea"), target.dataset.editorAction);
@@ -423,6 +451,7 @@ document.addEventListener("submit", async event => {
     }
     if (form.id === "site-form") {
       const data = Object.fromEntries(new FormData(form));
+      data.socialLinks = [...form.querySelectorAll("[data-social-row]")].map(row => ({ platform: row.querySelector("[data-social-platform]").value, label: row.querySelector("[data-social-label]").value, url: row.querySelector("[data-social-url]").value }));
       data.navigation = (state.site.navigation || []).map(item => ({ key: item.key, label: form.querySelector(`[data-nav-label="${item.key}"]`)?.value || item.label, visible: form.querySelector(`[data-nav-visible="${item.key}"]`)?.checked ?? true }));
       data.aboutTabs = (state.site.aboutTabs || []).map(item => ({ key: item.key, label: form.querySelector(`[data-tab-label="${item.key}"]`)?.value || item.label }));
       state.site = await api("/api/admin/site", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });

@@ -44,8 +44,19 @@ function cleanSite(input) {
   if (!text("name", 80)) throw new Error("站点名称需要填写");
   const navigation = Array.isArray(input.navigation) ? input.navigation : [];
   const tabs = Array.isArray(input.aboutTabs) ? input.aboutTabs : [];
+  const socialLinks = Array.isArray(input.socialLinks) ? input.socialLinks : [];
   const allowedNav = ["home", "articles", "links", "about"];
   const allowedTabs = ["bio", "projects", "resume"];
+  const allowedPlatforms = new Set(["youtube", "x", "bilibili", "telegram", "github", "website", "email"]);
+  if (socialLinks.length > 12) throw new Error("头像下方最多添加 12 个链接");
+  const cleanSocialLinks = socialLinks.map(item => {
+    const platform = String(item?.platform || "");
+    const label = String(item?.label || "").trim();
+    const url = String(item?.url || "").trim();
+    if (!allowedPlatforms.has(platform) || !label || label.length > 40 || url.length > 500) throw new Error("头像链接内容无效");
+    if (platform === "email" ? !/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(url) : !/^https:\/\/[^\s]+$/i.test(url)) throw new Error("链接需使用 HTTPS；邮箱使用 mailto:邮箱地址");
+    return { platform, label, url };
+  });
   for (const key of ["avatarUrl", "coverUrl"]) {
     const value = text(key, 500);
     if (value && !value.startsWith("/media/public/") && !/^https:\/\//i.test(value)) throw new Error("图片地址必须为公开图片或 HTTPS 地址");
@@ -60,6 +71,7 @@ function cleanSite(input) {
     coverUrl: text("coverUrl", 500),
     announcement: text("announcement", 600),
     contactEmail: email,
+    socialLinks: cleanSocialLinks,
     navigation: allowedNav.map(key => {
       const item = navigation.find(row => row?.key === key);
       return { key, label: String(item?.label || { home: "首页", articles: "文章", links: "常用链接", about: "关于" }[key]).slice(0, 20), visible: item?.visible !== false };
@@ -149,7 +161,9 @@ async function handleAdmin(request, env, path) {
   }
   if (path === "/api/admin/site" && request.method === "PUT") {
     const body = await request.json().catch(() => ({}));
-    const site = cleanSite(body);
+    let site;
+    try { site = cleanSite(body); }
+    catch (cause) { return error(cause.message); }
     await saveSetting(env.DB, "site", site);
     return json(site);
   }

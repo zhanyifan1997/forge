@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zhanyifan1997/forge)
 
-一个部署在 Cloudflare Workers 上的个人站。前台展示文章、链接与关于页面；项目和简历在「关于」的 Tab 中，访问时需要密码。后台可编辑站点名称、头像、封面、简介、公告、导航文字、文章、项目、简历、链接、待办、想法和每周回顾。待办、想法、回顾只在后台显示。
+一个部署在 Cloudflare Workers 上的个人站。前台展示文章、链接与关于页面；项目和简历在「关于」的 Tab 中，访问时需要密码。后台可编辑站点名称、头像、页面背景、头像下方的社交与联系链接、简介、公告、导航文字、文章、项目、简历、链接、待办、想法和每周回顾。待办、想法、回顾只在后台显示。前台与后台页眉使用 `public/brand/neuralperch-logo.png`，网站图标使用同套品牌头像。
 
 ## 技术与数据
 
