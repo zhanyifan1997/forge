@@ -57,7 +57,7 @@ function avatar() {
 function publicFrame(content) {
   const site = state.site || {};
   const nav = navItems();
-  return `<div class="shell">
+  return `${site.coverUrl ? `<div class="site-backdrop" aria-hidden="true"><img src="${attr(site.coverUrl)}" alt=""></div>` : ""}<div class="shell public-shell ${site.coverUrl ? "has-cover" : ""}">
     <header class="topbar"><a class="brand" href="#home" data-page="home">${esc(site.name || "个人站")}<small>PERSONAL SPACE</small></a>
       <nav class="topnav" aria-label="主导航">${nav.map(item => navButton(item)).join("")}</nav>
       <div class="top-actions"><button class="icon-button" aria-label="查看文章" data-page="articles">${ico("search", 18)}</button></div>
@@ -91,7 +91,7 @@ function entryCard(item) {
 }
 function homePage() {
   const site = state.site || {};
-  return `<section class="hero-panel panel">${site.coverUrl ? `<img class="hero-cover" src="${attr(site.coverUrl)}" alt="">` : ""}<div class="eyebrow">${esc(site.name || "个人站")} · PERSONAL SPACE</div>
+  return `<section class="hero-panel panel"><div class="eyebrow">${esc(site.name || "个人站")} · PERSONAL SPACE</div>
     <h1>${esc(site.tagline || "一句话介绍待填写")}</h1>
     <p>${esc(site.description ? plainMarkdown(site.description).slice(0, 140) : "在后台填写个人介绍后，这里会展示给访客。")}</p></section>
     <section class="section-card panel"><div class="section-head"><h2>最新文章</h2><button class="more" data-page="articles">查看全部 ${ico("arrow", 14)}</button></div>
@@ -221,8 +221,8 @@ function siteForm() {
       ${field("contactEmail","联系邮箱",site.contactEmail)}
       ${field("avatarUrl","头像地址",site.avatarUrl)}
       <div class="field wide"><label>上传头像</label><div class="upload-box">${site.avatarUrl ? `<img src="${attr(site.avatarUrl)}" alt="当前头像">` : ""}<input type="file" id="avatar-file" accept="image/jpeg,image/png,image/webp,image/gif"><button type="button" class="secondary" data-upload="avatar">上传并使用</button></div></div>
-      ${field("coverUrl","封面图片地址",site.coverUrl)}
-      <div class="field wide"><label>上传封面</label><div class="upload-box"><input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp,image/gif"><button type="button" class="secondary" data-upload="cover">上传并使用</button></div></div>
+      ${field("coverUrl","页面背景图片地址",site.coverUrl)}
+      <div class="field wide"><label>上传页面背景</label><div class="upload-box"><input type="file" id="cover-file" accept="image/jpeg,image/png,image/webp,image/gif"><button type="button" class="secondary" data-upload="cover">上传并使用</button></div></div>
     </div></div>
     <div class="form-panel"><h2>顶部与侧边导航</h2>
       ${(site.navigation || []).map(item => `<div class="toggle-row"><span>${esc(item.key)}</span><input aria-label="${esc(item.key)} 标签" data-nav-label="${attr(item.key)}" value="${attr(item.label)}" style="max-width:220px;border:1px solid var(--line);border-radius:8px;padding:7px"><label><input type="checkbox" data-nav-visible="${attr(item.key)}" ${item.visible ? "checked" : ""}> 显示</label></div>`).join("")}
