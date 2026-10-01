@@ -1,4 +1,5 @@
 import { renderMarkdown } from "./markdown.js";
+import { blankResume, parseResume, serializeResume, validateResume } from "./resume.js";
 
 const app = document.querySelector("#app");
 const isAdmin = document.body.dataset.mode === "admin";
@@ -10,6 +11,12 @@ const menu = [
 ];
 const names = { article: "文章", project: "项目", resume: "简历", link: "链接", task: "待办", idea: "想法", review: "回顾" };
 const socialPlatforms = [["youtube", "YouTube"], ["x", "X"], ["bilibili", "哔哩哔哩"], ["telegram", "Telegram"], ["github", "GitHub"], ["website", "网站"], ["email", "邮箱"]];
+const resumeSections = {
+  experience: { label: "工作经历", fields: [["organization", "公司 / 组织"], ["role", "职位"], ["period", "起止时间"], ["location", "地点"], ["description", "主要成果与职责", "textarea"]] },
+  education: { label: "教育经历", fields: [["school", "学校"], ["degree", "学历 / 专业"], ["period", "起止时间"], ["description", "补充说明", "textarea"]] },
+  projects: { label: "项目经历", fields: [["name", "项目名称"], ["role", "角色"], ["period", "起止时间"], ["url", "项目链接"], ["description", "项目成果", "textarea"]] },
+  skills: { label: "专业技能", fields: [["category", "技能类别"], ["items", "技能项（逗号或换行分隔）", "textarea"]] }
+};
 const state = {
   site: null, articles: [], links: [], protected: false, unlocked: false,
   page: "home", tab: "bio", category: "全部", detail: null, modal: null,
@@ -32,7 +39,8 @@ const ico = (name, size = 17) => {
     link: '<path d="M10 13a5 5 0 0 0 7 .5l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.5l-3 3a5 5 0 0 0 7 7l2-2"/>',
     pen: '<path d="m4 20 4-.8L20 7.2 16.8 4 4.8 16zM14.5 6.5l3 3"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
-    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 16 5-5 4 4 3-3 6 6"/>'
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 16 5-5 4 4 3-3 6 6"/>',
+    file: '<path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8 13h7M8 17h7"/>'
   };
   return `<svg aria-hidden="true" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.link}</svg>`;
 };
@@ -99,9 +107,10 @@ function rail() {
     ${state.site?.announcement ? `<section class="rail-card panel"><h3>站点公告</h3><p class="notice">${esc(state.site.announcement)}</p></section>` : ""}`;
 }
 function entryCard(item) {
+  const description = item.kind === "resume" ? (item.summary || parseResume(item.body).headline || "查看简历") : (item.summary || plainMarkdown(item.body).slice(0, 90) || "点击查看内容");
   return `<button class="entry-card" data-detail="${attr(item.kind)}:${attr(item.id)}">
-    <div class="thumb">${item.image_url ? `<img src="${attr(item.image_url)}" alt="">` : ico("image", 25)}</div>
-    <div><h3>${esc(item.title)}</h3><p>${esc(item.summary || plainMarkdown(item.body).slice(0, 90) || "点击查看内容")}</p>
+    <div class="thumb">${item.image_url ? `<img src="${attr(item.image_url)}" alt="">` : ico(item.kind === "resume" ? "file" : "image", 25)}</div>
+    <div><h3>${esc(item.title)}</h3><p>${esc(description)}</p>
     <div class="meta">${item.category ? `<span class="pill">${esc(item.category)}</span>` : ""}<span>${fmtDate(item.updated_at)}</span></div></div></button>`;
 }
 function homePage() {
@@ -134,12 +143,37 @@ function aboutPage() {
   return `<section class="section-card panel"><div class="tabs" role="tablist">${tabs.map(tab => `<button role="tab" aria-selected="${state.tab === tab.key}" class="tab ${state.tab === tab.key ? "active" : ""}" data-tab="${attr(tab.key)}">${esc(tab.label)} ${tab.key !== "bio" ? ico("lock", 12) : ""}</button>`).join("")}</div>${body}</section>`;
 }
 function detailPage(item, inline = false) {
+  if (item.kind === "resume") return resumeDetailPage(item);
   return `${inline ? `<button class="text-button" data-back-about="1">← 返回列表</button>` : `<button class="text-button" data-back="1">← 返回文章</button>`}
     <h1 class="page-title" style="margin-top:15px">${esc(item.title)}</h1>
     <div class="meta" style="margin-bottom:20px">${item.category ? `<span class="pill">${esc(item.category)}</span>` : ""}<span>${fmtDate(item.updated_at)}</span></div>
     ${item.image_url ? `<img src="${attr(item.image_url)}" alt="" style="width:100%;max-height:330px;object-fit:cover;border-radius:12px;margin-bottom:20px">` : ""}
     <div class="detail-body markdown-body">${renderMarkdown(item.body || item.summary)}</div>
     ${item.url ? `<p style="margin-top:22px"><a class="primary" href="${attr(item.url)}" target="_blank" rel="noopener noreferrer">查看相关链接 ↗</a></p>` : ""}`;
+}
+function resumeDetailPage(item) {
+  return `<button class="text-button" data-back-about="1">← 返回简历列表</button>${renderResume(parseResume(item.body))}`;
+}
+function renderResume(resume) {
+  const contact = [
+    resume.email ? `<a href="mailto:${attr(resume.email)}">${esc(resume.email)}</a>` : "",
+    resume.phone ? `<span>${esc(resume.phone)}</span>` : "",
+    resume.location ? `<span>${esc(resume.location)}</span>` : "",
+    resume.website ? `<a href="${attr(resume.website)}" target="_blank" rel="noopener noreferrer">${esc(resume.website.replace(/^https:\/\//, ""))}</a>` : ""
+  ].filter(Boolean).join("");
+  const timeline = (title, rows, makeRow) => rows.length ? `<section class="resume-section"><h2>${title}</h2><div class="resume-section-content">${rows.map(makeRow).join("")}</div></section>` : "";
+  return `<article class="resume-sheet">
+    <header class="resume-header"><span class="resume-kicker">RESUME / 个人简历</span><h1>${esc(resume.name || "姓名待填写")}</h1>
+      ${resume.headline ? `<p class="resume-headline">${esc(resume.headline)}</p>` : ""}
+      ${contact ? `<div class="resume-contact">${contact}</div>` : ""}</header>
+    <div class="resume-content">
+      ${resume.summary ? `<section class="resume-section"><h2>个人简介</h2><div class="resume-section-content markdown-body">${renderMarkdown(resume.summary)}</div></section>` : ""}
+      ${timeline("工作经历", resume.experience, row => `<div class="resume-item"><div class="resume-item-head"><div><h3>${esc(row.role || row.organization)}</h3><strong>${esc(row.organization)}</strong></div><span>${esc(row.period)}</span></div>${row.location ? `<small>${esc(row.location)}</small>` : ""}${row.description ? `<div class="markdown-body">${renderMarkdown(row.description)}</div>` : ""}</div>`)}
+      ${timeline("项目经历", resume.projects, row => `<div class="resume-item"><div class="resume-item-head"><div><h3>${esc(row.name)}</h3>${row.role ? `<strong>${esc(row.role)}</strong>` : ""}</div><span>${esc(row.period)}</span></div>${row.url ? `<a class="resume-project-link" href="${attr(row.url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>` : ""}${row.description ? `<div class="markdown-body">${renderMarkdown(row.description)}</div>` : ""}</div>`)}
+      ${timeline("教育经历", resume.education, row => `<div class="resume-item"><div class="resume-item-head"><div><h3>${esc(row.school)}</h3><strong>${esc(row.degree)}</strong></div><span>${esc(row.period)}</span></div>${row.description ? `<div class="markdown-body">${renderMarkdown(row.description)}</div>` : ""}</div>`)}
+      ${timeline("专业技能", resume.skills, row => `<div class="resume-skill-group"><h3>${esc(row.category)}</h3><div class="resume-skill-list">${row.items.split(/[,，\n]/).map(value => value.trim()).filter(Boolean).map(value => `<span>${esc(value)}</span>`).join("")}</div></div>`)}
+      ${resume.additional ? `<section class="resume-section"><h2>补充信息</h2><div class="resume-section-content markdown-body">${renderMarkdown(resume.additional)}</div></section>` : ""}
+    </div></article>`;
 }
 function renderModal() {
   if (state.modal !== "unlock") return "";
@@ -264,7 +298,59 @@ function accessForm() {
       <div class="field"><label for="access-password">新密码</label><input id="access-password" type="password" name="password" autocomplete="new-password" minlength="8" required placeholder="至少 8 个字符"></div>
       <div class="actions"><button class="primary">保存密码</button><span id="admin-feedback" class="feedback" role="status"></span></div></form>`;
 }
+function resumeInput(key, label, value = "", area = false, required = false, row = false) {
+  const marker = row ? `data-resume-field="${key}"` : `data-resume-key="${key}"`;
+  const type = key === "email" ? "email" : key === "website" || key === "url" ? "url" : "text";
+  return `<div class="field ${area ? "wide" : ""}"><label>${label}${area ? `<textarea ${marker} ${required ? "required" : ""}>${esc(value)}</textarea>` : `<input ${marker} type="${type}" value="${attr(value)}" ${required ? "required" : ""}>`}</label></div>`;
+}
+function resumeRow(section, item = {}) {
+  const fields = resumeSections[section].fields;
+  return `<div class="resume-edit-row" data-resume-row="${section}"><div class="resume-edit-row-head"><strong>${resumeSections[section].label}条目</strong><button type="button" class="text-button delete" data-resume-remove="1">删除</button></div>
+    <div class="form-grid">${fields.map(([key, label, type]) => resumeInput(key, label, item[key], type === "textarea", false, true)).join("")}</div></div>`;
+}
+function resumeEditorSection(section, rows) {
+  return `<div class="form-panel"><div class="resume-edit-head"><h2>${resumeSections[section].label}</h2><button type="button" class="secondary" data-resume-add="${section}">＋ 添加</button></div>
+    <div data-resume-list="${section}">${rows.map(row => resumeRow(section, row)).join("")}</div></div>`;
+}
+function resumeForm(item = {}) {
+  const resume = parseResume(item.body);
+  return `<form id="entry-form" class="resume-form" data-kind="resume" data-id="${attr(item.id || "")}">
+    <div class="form-panel"><h2>${item.id ? "编辑" : "新建"}简历</h2><div class="form-grid">
+      <div class="field wide"><label for="resume-title">列表标题（可选）</label><input id="resume-title" name="title" maxlength="180" value="${attr(item.title)}" placeholder="留空时使用姓名"></div>
+    </div><p class="notice">列表标题只用于简历列表；简历页面以姓名为主标题。</p></div>
+    <div class="form-panel"><h2>基本资料</h2><div class="form-grid">
+      ${resumeInput("name", "姓名", resume.name, false, true)}
+      ${resumeInput("headline", "职业方向 / 职位", resume.headline)}
+      ${resumeInput("email", "邮箱", resume.email)}
+      ${resumeInput("phone", "电话", resume.phone)}
+      ${resumeInput("location", "所在地", resume.location)}
+      ${resumeInput("website", "个人网站 / 作品集", resume.website)}
+      ${resumeInput("summary", "个人简介", resume.summary, true)}
+    </div></div>
+    ${resumeEditorSection("experience", resume.experience)}
+    ${resumeEditorSection("projects", resume.projects)}
+    ${resumeEditorSection("education", resume.education)}
+    ${resumeEditorSection("skills", resume.skills)}
+    <div class="form-panel"><h2>补充信息</h2>${markdownEditor("resume-additional", "其他经历、证书或荣誉", resume.additional, "private")}</div>
+    <div class="form-panel"><div class="form-grid"><div class="field"><label for="resume-status">状态</label><select id="resume-status" name="status"><option value="draft" ${(item.status || "draft") === "draft" ? "selected" : ""}>草稿</option><option value="published" ${item.status === "published" ? "selected" : ""}>已发布</option></select></div>
+      <div class="field"><label for="resume-order">排序</label><input id="resume-order" name="sort_order" type="number" value="${attr(item.sort_order ?? 0)}"></div></div>
+      <div class="actions"><button class="primary">保存简历</button><button class="secondary" type="button" data-cancel-edit="1">取消</button><span id="admin-feedback" class="feedback" role="status"></span></div></div>
+    <details class="resume-preview"><summary data-resume-preview="1">预览简历版式</summary><div id="resume-preview-content">${renderResume(resume)}</div></details>
+  </form>`;
+}
+function collectResume(form) {
+  const resume = blankResume();
+  for (const key of ["name", "headline", "email", "phone", "location", "website", "summary"]) resume[key] = form.querySelector(`[data-resume-key="${key}"]`)?.value || "";
+  resume.additional = form.querySelector("#resume-additional")?.value || "";
+  for (const section of Object.keys(resumeSections)) resume[section] = [...form.querySelectorAll(`[data-resume-row="${section}"]`)].map(row => Object.fromEntries(resumeSections[section].fields.map(([key]) => [key, row.querySelector(`[data-resume-field="${key}"]`)?.value || ""]))).filter(row => Object.values(row).some(value => value.trim()));
+  return resume;
+}
+function updateResumePreview(form) {
+  const preview = form.querySelector("#resume-preview-content");
+  if (preview && form.querySelector(".resume-preview")?.open) preview.innerHTML = renderResume(collectResume(form));
+}
 function entryForm(kind, item = {}) {
+  if (kind === "resume") return resumeForm(item);
   const label = names[kind];
   const showBody = kind !== "link";
   const showUrl = ["link", "project", "resume"].includes(kind);
@@ -288,8 +374,8 @@ function entriesPage(kind) {
   const label = names[kind];
   const editing = state.editId === "new" ? {} : state.rows.find(row => row.id === state.editId);
   return `<div class="admin-head"><div><h1>${label}管理</h1><p>${kind === "task" || kind === "idea" || kind === "review" ? "这些内容仅在后台显示。" : kind === "project" || kind === "resume" ? "只有获得访问权限的访客才能查看已发布内容。" : "草稿不会出现在公开网站。"}</p></div><button class="primary" data-new-entry="${kind}">＋ 新建${label}</button></div>
-    ${state.rows.length ? `<div class="admin-table"><div class="admin-row"><span>标题</span><span>分类</span><span>状态</span><span>操作</span></div>
-      ${state.rows.map(row => `<div class="admin-row"><strong title="${attr(row.title)}">${esc(row.title)}</strong><span class="muted">${esc(row.category || "—")}</span><span class="pill">${({ draft:"草稿",published:"已发布",done:"已完成" })[row.status] || esc(row.status)}</span><span class="row-actions"><button class="text-button" data-edit-entry="${attr(row.id)}">编辑</button><button class="text-button delete" data-delete-entry="${attr(row.id)}">删除</button></span></div>`).join("")}</div>` : '<div class="empty">这里还没有内容。点击右上角新建。</div>'}
+    ${state.rows.length ? `<div class="admin-table"><div class="admin-row"><span>标题</span><span>${kind === "resume" ? "职业方向" : "分类"}</span><span>状态</span><span>操作</span></div>
+      ${state.rows.map(row => `<div class="admin-row"><strong title="${attr(row.title)}">${esc(row.title)}</strong><span class="muted">${esc(kind === "resume" ? parseResume(row.body).headline || "—" : row.category || "—")}</span><span class="pill">${({ draft:"草稿",published:"已发布",done:"已完成" })[row.status] || esc(row.status)}</span><span class="row-actions"><button class="text-button" data-edit-entry="${attr(row.id)}">编辑</button><button class="text-button delete" data-delete-entry="${attr(row.id)}">删除</button></span></div>`).join("")}</div>` : '<div class="empty">这里还没有内容。点击右上角新建。</div>'}
     ${state.editId ? entryForm(kind, editing || {}) : ""}`;
 }
 function renderAdmin() {
@@ -357,9 +443,12 @@ function insertMarkdown(textarea, action, replacement = "") {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 document.addEventListener("input", event => {
-  if (!event.target.matches(".markdown-editor textarea")) return;
-  const preview = event.target.closest(".markdown-editor")?.querySelector(".editor-preview");
-  if (preview) preview.innerHTML = event.target.value ? renderMarkdown(event.target.value) : '<p class="muted">预览会在这里显示</p>';
+  if (event.target.matches(".markdown-editor textarea")) {
+    const preview = event.target.closest(".markdown-editor")?.querySelector(".editor-preview");
+    if (preview) preview.innerHTML = event.target.value ? renderMarkdown(event.target.value) : '<p class="muted">预览会在这里显示</p>';
+  }
+  const form = event.target.closest(".resume-form");
+  if (form) updateResumePreview(form);
 });
 document.addEventListener("change", async event => {
   if (!event.target.matches(".editor-image-file")) return;
@@ -382,10 +471,24 @@ document.addEventListener("change", async event => {
   finally { input.value = ""; }
 });
 document.addEventListener("click", async event => {
-  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload],[data-editor-action],[data-add-social],[data-remove-social]");
+  const target = event.target.closest("[data-page],[data-tab],[data-category],[data-detail],[data-unlock],[data-close-modal],[data-back],[data-back-about],[data-admin-page],[data-admin-logout],[data-new-entry],[data-edit-entry],[data-delete-entry],[data-cancel-edit],[data-upload],[data-editor-action],[data-add-social],[data-remove-social],[data-resume-add],[data-resume-remove],[data-resume-preview]");
   if (!target) return;
   try {
-    if (target.dataset.addSocial) document.querySelector("#social-link-list")?.insertAdjacentHTML("beforeend", socialLinkRow());
+    if (target.dataset.resumeAdd) {
+      const form = target.closest(".resume-form");
+      form.querySelector(`[data-resume-list="${target.dataset.resumeAdd}"]`)?.insertAdjacentHTML("beforeend", resumeRow(target.dataset.resumeAdd));
+      updateResumePreview(form);
+    }
+    else if (target.dataset.resumeRemove) {
+      const form = target.closest(".resume-form");
+      target.closest("[data-resume-row]")?.remove();
+      updateResumePreview(form);
+    }
+    else if (target.dataset.resumePreview) {
+      const form = target.closest(".resume-form");
+      form.querySelector("#resume-preview-content").innerHTML = renderResume(collectResume(form));
+    }
+    else if (target.dataset.addSocial) document.querySelector("#social-link-list")?.insertAdjacentHTML("beforeend", socialLinkRow());
     else if (target.dataset.removeSocial) target.closest("[data-social-row]")?.remove();
     else if (target.dataset.editorAction) {
       const editor = target.closest(".markdown-editor");
@@ -464,6 +567,15 @@ document.addEventListener("submit", async event => {
     if (form.id === "entry-form") {
       const kind = form.dataset.kind;
       const data = Object.fromEntries(new FormData(form));
+      if (kind === "resume") {
+        const resume = validateResume(collectResume(form));
+        data.body = serializeResume(resume);
+        data.title = data.title?.trim() || resume.name;
+        data.summary = (resume.headline || plainMarkdown(resume.summary)).slice(0, 1000);
+        data.category = "";
+        data.url = "";
+        data.image_url = "";
+      }
       const id = form.dataset.id;
       await api(`/api/admin/entries/${kind}${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
       state.editId = null;

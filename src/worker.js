@@ -1,4 +1,5 @@
 import { adminConfigured, checkAdminCredentials, checkAdminToken, checkPassword, checkUnlockToken, createAdminToken, createPasswordRecord, createUnlockToken, hmac } from "./security.js";
+import { isStructuredResume, parseResume, serializeResume, validateResume } from "../public/resume.js";
 
 const kinds = new Set(["article", "project", "resume", "link", "task", "idea", "review"]);
 const publicKinds = new Set(["article", "link"]);
@@ -37,6 +38,10 @@ function cleanEntry(input, kind) {
   if (entry.image_url && !entry.image_url.startsWith("/media/") && !/^https:\/\//i.test(entry.image_url)) throw new Error("图片地址无效");
   if (!["draft", "published", "done"].includes(entry.status)) throw new Error("状态无效");
   if (kind === "link" && !entry.url) throw new Error("链接地址需要填写");
+  if (kind === "resume") {
+    if (!isStructuredResume(entry.body)) throw new Error("请填写结构化简历资料");
+    entry.body = serializeResume(validateResume(parseResume(entry.body)));
+  }
   return entry;
 }
 function cleanSite(input) {
@@ -179,13 +184,17 @@ async function handleAdmin(request, env, path) {
     if (!kinds.has(kind)) return error("类别无效");
     if (request.method === "GET" && !id) return json(await listEntries(env.DB, kind));
     if (request.method === "POST" && !id) {
-      const entry = cleanEntry(await request.json(), kind);
+      let entry;
+      try { entry = cleanEntry(await request.json(), kind); }
+      catch (cause) { return error(cause.message); }
       const newId = crypto.randomUUID();
       await env.DB.prepare("INSERT INTO entries(id,kind,title,summary,body,category,url,image_url,status,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(newId, kind, ...fields.map(key => entry[key])).run();
       return json({ id: newId }, 201);
     }
     if (id && request.method === "PUT") {
-      const entry = cleanEntry(await request.json(), kind);
+      let entry;
+      try { entry = cleanEntry(await request.json(), kind); }
+      catch (cause) { return error(cause.message); }
       const result = await env.DB.prepare("UPDATE entries SET title=?,summary=?,body=?,category=?,url=?,image_url=?,status=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND kind=?").bind(...fields.map(key => entry[key]), id, kind).run();
       return result.meta.changes ? json({ ok: true }) : error("内容不存在", 404);
     }
