@@ -115,8 +115,7 @@ function entryCard(item) {
 }
 function homePage() {
   const site = state.site || {};
-  return `<section class="hero-panel panel"><div class="eyebrow">${esc(site.name || "个人站")} · PERSONAL SPACE</div>
-    <h1>${esc(site.tagline || "一句话介绍待填写")}</h1>
+  return `<section class="hero-panel panel"><h1>${esc(site.tagline || "一句话介绍待填写")}</h1>
     <p>${esc(site.description ? plainMarkdown(site.description).slice(0, 140) : "在后台填写个人介绍后，这里会展示给访客。")}</p></section>
     <section class="section-card panel"><div class="section-head"><h2>最新文章</h2><button class="more" data-page="articles">查看全部 ${ico("arrow", 14)}</button></div>
       <div class="entry-list">${state.articles.length ? state.articles.slice(0, 4).map(entryCard).join("") : '<div class="empty">还没有发布文章。发布后会显示在这里。</div>'}</div></section>
